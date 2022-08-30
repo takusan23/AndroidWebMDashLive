@@ -8,22 +8,21 @@ import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
-import android.media.MediaRecorder
 import android.os.Build
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.annotation.RequiresPermission
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
 import io.github.takusan23.androidwebmdashlive.databinding.ActivityMainBinding
-import kotlinx.coroutines.*
-import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
@@ -48,6 +47,9 @@ class MainActivity : AppCompatActivity() {
     /** 生成した動画をまとめるクラス */
     private lateinit var contentManager: DashContentManager
 
+    /** Webサーバー */
+    private lateinit var dashServer: DashServer
+
     @RequiresApi(Build.VERSION_CODES.P)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,13 +61,15 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // 開始ボタン
+        // 開始ボタン、セグメント生成とサーバーを起動する
         viewBinding.startButton.setOnClickListener {
+            dashServer.startServer()
             dashContainer.start()
         }
 
         // 終了ボタン
         viewBinding.stopButton.setOnClickListener {
+            dashServer.stopServer()
             videoEncoder.release()
             dashContainer.release()
         }
@@ -76,13 +80,22 @@ class MainActivity : AppCompatActivity() {
             cameraDevice = suspendOpenCamera()
 
             // ファイル管理クラス
-            contentManager = DashContentManager(getExternalFilesDir(null)!!, "segment").apply {
+            contentManager = DashContentManager(getExternalFilesDir(null)!!, SEGMENT_FILENAME_PREFIX).apply {
+                // 今までのファイルを消す
                 deleteGenerateFile()
             }
             // コンテナフォーマットに書き込むクラス
             dashContainer = DashContainerWriter(contentManager.generateTempFile("temp")).apply {
                 resetOrCreateContainerFile()
             }
+
+            // Webサーバー
+            dashServer = DashServer(
+                portNumber = 8080,
+                segmentIntervalSec = (SEGMENT_INTERVAL_MS / 1000).toInt(),
+                segmentFileNamePrefix = SEGMENT_FILENAME_PREFIX,
+                staticHostingFolder = contentManager.outputFolder
+            )
 
             // エンコーダーを初期化する
             videoEncoder.prepareEncoder(
@@ -126,20 +139,23 @@ class MainActivity : AppCompatActivity() {
                 }
             }).apply { cameraDevice!!.createCaptureSession(this) }
 
-            while (isActive) {
-                if (dashContainer.isRunning) {
-                    // SEGMENT_INTERVAL_MS 待機したら新しいファイルにする
-                    delay(SEGMENT_INTERVAL_MS)
-                    // 初回時だけ初期化セグメントを作る
-                    if (!dashContainer.isGeneratedInitSegment) {
-                        contentManager.createFile(INIT_SEGMENT_FILENAME).also { initSegment ->
-                            dashContainer.sliceInitSegmentFile(initSegment.path)
+            // WebM セグメントファイルを作る。MediaMuxerが書き込んでるファイルに対して切り出して保存する
+            launch(Dispatchers.Default) {
+                while (isActive) {
+                    if (dashContainer.isRunning) {
+                        // SEGMENT_INTERVAL_MS 待機したら新しいファイルにする
+                        delay(SEGMENT_INTERVAL_MS)
+                        // 初回時だけ初期化セグメントを作る
+                        if (!dashContainer.isGeneratedInitSegment) {
+                            contentManager.createFile(INIT_SEGMENT_FILENAME).also { initSegment ->
+                                dashContainer.sliceInitSegmentFile(initSegment.path)
+                            }
                         }
-                    }
-                    // MediaMuxerで書き込み中のファイルから定期的にデータをコピーして（セグメントファイルが出来る）クライアントで再生する
-                    // この方法だと、MediaMuxerとMediaMuxerからコピーしたデータで二重に容量を使うけど後で考える
-                    contentManager.createIncrementFile().also { segment ->
-                        dashContainer.sliceSegmentFile(segment.path)
+                        // MediaMuxerで書き込み中のファイルから定期的にデータをコピーして（セグメントファイルが出来る）クライアントで再生する
+                        // この方法だと、MediaMuxerとMediaMuxerからコピーしたデータで二重に容量を使うけど後で考える
+                        contentManager.createIncrementFile().also { segment ->
+                            dashContainer.sliceSegmentFile(segment.path)
+                        }
                     }
                 }
             }
@@ -198,6 +214,8 @@ class MainActivity : AppCompatActivity() {
         /** 初期化セグメントの名前 */
         private const val INIT_SEGMENT_FILENAME = "init.webm"
 
+        /** セグメントファイルのプレフィックス */
+        private const val SEGMENT_FILENAME_PREFIX = "segment"
     }
 
 }

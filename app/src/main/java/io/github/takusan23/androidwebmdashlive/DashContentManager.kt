@@ -53,7 +53,6 @@ class DashContentManager(
         }
     }
 
-
     /**
      * 一時ファイルを生成する関数
      *
