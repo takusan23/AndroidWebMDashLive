@@ -46,8 +46,8 @@ class DashContainerWriter(private val tempFile: File) {
     var isGeneratedInitSegment = false
         private set
 
-    /** コンテナフォーマット / MediaMuxer を (再) 生成する */
-    suspend fun resetOrCreateContainerFile() = withContext(Dispatchers.IO) {
+    /** コンテナフォーマット / MediaMuxer を生成する */
+    suspend fun createContainerFile() = withContext(Dispatchers.IO) {
         tempFile.delete()
         isGeneratedInitSegment = false
         mediaMuxer = MediaMuxer(tempFile.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM)
@@ -146,7 +146,7 @@ class DashContainerWriter(private val tempFile: File) {
 
     /**
      * 書き込みを開始させる。
-     * これ以降のフォーマット登録を受け付けないので、ファイル再生成まで登録されません [resetOrCreateContainerFile]
+     * これ以降のフォーマット登録を受け付けないので、ファイル再生成まで登録されません [createContainerFile]
      */
     fun start() {
         if (!isRunning) {

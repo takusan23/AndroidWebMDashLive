@@ -86,7 +86,7 @@ class MainActivity : AppCompatActivity() {
             }
             // コンテナフォーマットに書き込むクラス
             dashContainer = DashContainerWriter(contentManager.generateTempFile("temp")).apply {
-                resetOrCreateContainerFile()
+                createContainerFile()
             }
 
             // Webサーバー

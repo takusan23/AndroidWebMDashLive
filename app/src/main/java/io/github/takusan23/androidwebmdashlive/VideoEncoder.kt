@@ -27,12 +27,6 @@ class VideoEncoder {
     private var inputSurface: Surface? = null
 
     /**
-     * Surface入力のMediaCodecの場合、 presentationTimeUs の値が System.nanoTime を足した値になっているため、その分を引くため
-     * 引かないと音声エンコーダーと合わなくなってしまう。
-     */
-    private var startUs = 0L
-
-    /**
      * エンコーダーを初期化する
      *
      * @param videoWidth 動画の幅
@@ -51,6 +45,8 @@ class VideoEncoder {
         isVp9: Boolean = false,
     ) {
         // コーデックの選択
+        // もし重くなるようなら、コーデックを VP8 にダウングレードしてもいいかもしれない
+        // その場合、MPEG-DASHのマニフェストでもコーデックを vp8 にする必要あり
         val codec = if (isVp9) MediaFormat.MIMETYPE_VIDEO_VP9 else MediaFormat.MIMETYPE_VIDEO_AVC
         val videoEncodeFormat = MediaFormat.createVideoFormat(codec, videoWidth, videoHeight).apply {
             setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
@@ -87,7 +83,6 @@ class VideoEncoder {
         // 多分使い回す
         val bufferInfo = MediaCodec.BufferInfo()
         mediaCodec?.start()
-        startUs = System.nanoTime() / 1000L
 
         try {
             while (isActive) {
@@ -117,14 +112,6 @@ class VideoEncoder {
             // at android.media.MediaCodec.native_dequeueOutputBuffer(Native Method)
             e.printStackTrace()
         }
-    }
-
-    /**
-     * このエンコーダー内部で持っている時間をリセットします
-     * 次の動画ファイルに切り替えた際に呼び出す
-     */
-    fun resetInternalTime() {
-        startUs = System.nanoTime() / 1000L
     }
 
     /** リソースを開放する */
