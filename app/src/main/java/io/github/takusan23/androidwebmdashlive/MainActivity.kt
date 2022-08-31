@@ -1,6 +1,6 @@
 package io.github.takusan23.androidwebmdashlive
 
-import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCaptureSession
@@ -12,8 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import android.widget.Toast
-import androidx.annotation.RequiresApi
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -50,16 +49,30 @@ class MainActivity : AppCompatActivity() {
     /** Webサーバー */
     private lateinit var dashServer: DashServer
 
-    @RequiresApi(Build.VERSION_CODES.P)
+    /** 権限コールバック */
+    @SuppressLint("MissingPermission")
+    private val permissionResult = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        if (it) {
+            setupCameraAndEncoder()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(viewBinding.root)
 
-        // 権限ない場合
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, "権限がありません", Toast.LENGTH_SHORT).show()
-            return
+        // カメラ権限がある場合は準備する
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            setupCameraAndEncoder()
+        } else {
+            // 権限を求める
+            permissionResult.launch(android.Manifest.permission.CAMERA)
         }
+    }
+
+    /** カメラとエンコーダーを初期化する */
+    @RequiresPermission(android.Manifest.permission.CAMERA)
+    private fun setupCameraAndEncoder() {
 
         // 開始ボタン、セグメント生成とサーバーを起動する
         viewBinding.startButton.setOnClickListener {
@@ -106,7 +119,7 @@ class MainActivity : AppCompatActivity() {
                 isVp9 = true
             )
             // Camera2 API から MediaCodec へ映像を渡すための Surface
-            val surface = videoEncoder.createInputSurface()
+            val inputSurface = videoEncoder.createInputSurface()
 
             // エンコーダーを起動する、動作中は一時停止するので別コルーチンを起動
             launch {
@@ -120,25 +133,41 @@ class MainActivity : AppCompatActivity() {
                 )
             }
 
+            // 出力先Surface。プレビューとVP9にエンコードするMediaCodec
+            val outputSurfaceList = listOf(holder.surface, inputSurface)
             // カメラの設定をする
-            val outputList = buildList {
-                add(OutputConfiguration(holder.surface))
-                add(OutputConfiguration(surface))
-            }
             val captureRequest = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
-                addTarget(holder.surface)
-                addTarget(surface)
+                outputSurfaceList.forEach {
+                    addTarget(it)
+                }
             }.build()
-            SessionConfiguration(SessionConfiguration.SESSION_REGULAR, outputList, cameraExecutor, object : CameraCaptureSession.StateCallback() {
-                override fun onConfigured(captureSession: CameraCaptureSession) {
-                    captureSession.setRepeatingRequest(captureRequest, null, null)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val outputList = buildList {
+                    outputSurfaceList.forEach {
+                        add(OutputConfiguration(it))
+                    }
                 }
+                SessionConfiguration(SessionConfiguration.SESSION_REGULAR, outputList, cameraExecutor, object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(captureSession: CameraCaptureSession) {
+                        captureSession.setRepeatingRequest(captureRequest, null, null)
+                    }
 
-                override fun onConfigureFailed(p0: CameraCaptureSession) {
+                    override fun onConfigureFailed(p0: CameraCaptureSession) {
 
-                }
-            }).apply { cameraDevice!!.createCaptureSession(this) }
+                    }
+                }).apply { cameraDevice!!.createCaptureSession(this) }
+            } else {
+                cameraDevice!!.createCaptureSession(outputSurfaceList, object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(captureSession: CameraCaptureSession) {
+                        captureSession.setRepeatingRequest(captureRequest, null, null)
+                    }
 
+                    override fun onConfigureFailed(p0: CameraCaptureSession) {
+
+                    }
+                }, null)
+            }
             // WebM セグメントファイルを作る。MediaMuxerが書き込んでるファイルに対して切り出して保存する
             launch(Dispatchers.Default) {
                 while (isActive) {
@@ -187,7 +216,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** カメラを開くまで一時停止する */
-    @RequiresPermission(Manifest.permission.CAMERA)
+    @RequiresPermission(android.Manifest.permission.CAMERA)
     private suspend fun suspendOpenCamera() = suspendCoroutine<CameraDevice> {
         val cameraId = cameraManager.cameraIdList[0]
         cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
