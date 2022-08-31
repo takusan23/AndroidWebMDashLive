@@ -113,6 +113,7 @@ class DashContainerWriter(private val tempFile: File) {
                 stream.read(byteArray)
                 file.writeBytes(byteArray)
             }
+            println(tempFile.length())
             // 書き込み可にする
             isWritable = true
         }
