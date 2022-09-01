@@ -261,23 +261,6 @@ class MainActivity : AppCompatActivity() {
         release()
     }
 
-    /** Surfaceが利用可能になるまで一時停止する */
-    private suspend fun suspendSurfaceHolder(surfaceView: SurfaceView) = suspendCoroutine<SurfaceHolder> {
-        surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
-            override fun surfaceCreated(p0: SurfaceHolder) {
-                it.resume(p0)
-            }
-
-            override fun surfaceChanged(p0: SurfaceHolder, p1: Int, p2: Int, p3: Int) {
-
-            }
-
-            override fun surfaceDestroyed(p0: SurfaceHolder) {
-
-            }
-        })
-    }
-
     /** カメラを開くまで一時停止する */
     @RequiresPermission(android.Manifest.permission.CAMERA)
     private suspend fun suspendOpenCamera() = suspendCoroutine<CameraDevice> {
