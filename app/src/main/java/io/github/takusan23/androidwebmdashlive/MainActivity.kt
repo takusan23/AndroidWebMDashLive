@@ -21,10 +21,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
 import io.github.takusan23.androidwebmdashlive.databinding.ActivityMainBinding
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
@@ -99,10 +96,7 @@ class MainActivity : AppCompatActivity() {
         }
         // 終了ボタン
         viewBinding.stopButton.setOnClickListener {
-            dashServer.stopServer()
-            dashContainer.release()
-            videoEncoder.release()
-            audioEncoder.release()
+            release()
         }
 
         // ファイル管理クラス
@@ -124,19 +118,21 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.Default) {
             while (isActive) {
                 if (dashContainer.isRunning) {
-                    // SEGMENT_INTERVAL_MS 待機したら新しいファイルにする
-                    delay(SEGMENT_INTERVAL_MS)
-                    // 初回時だけ初期化セグメントを作る
-                    if (!dashContainer.isGeneratedInitSegment) {
-                        contentManager.createFile(INIT_SEGMENT_FILENAME).also { initSegment ->
-                            dashContainer.sliceInitSegmentFile(initSegment.path)
+                    runCatching {
+                        // SEGMENT_INTERVAL_MS 待機したら新しいファイルにする
+                        delay(SEGMENT_INTERVAL_MS)
+                        // 初回時だけ初期化セグメントを作る
+                        if (!dashContainer.isGeneratedInitSegment) {
+                            contentManager.createFile(INIT_SEGMENT_FILENAME).also { initSegment ->
+                                dashContainer.sliceInitSegmentFile(initSegment.path)
+                            }
                         }
-                    }
-                    // MediaMuxerで書き込み中のファイルから定期的にデータをコピーして（セグメントファイルが出来る）クライアントで再生する
-                    // この方法だと、MediaMuxerとMediaMuxerからコピーしたデータで二重に容量を使うけど後で考える
-                    contentManager.createIncrementFile().also { segment ->
-                        dashContainer.sliceSegmentFile(segment.path)
-                    }
+                        // MediaMuxerで書き込み中のファイルから定期的にデータをコピーして（セグメントファイルが出来る）クライアントで再生する
+                        // この方法だと、MediaMuxerとMediaMuxerからコピーしたデータで二重に容量を使うけど後で考える
+                        contentManager.createIncrementFile().also { segment ->
+                            dashContainer.sliceSegmentFile(segment.path)
+                        }
+                    }.onFailure { it.printStackTrace() }
                 }
             }
         }
@@ -147,7 +143,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupCameraAndEncoder() {
         // コールバック関数を回避するためにコルーチンを活用していく
         lifecycleScope.launch {
-            val holder = suspendSurfaceHolder(viewBinding.surfaceView)
+            val holder = viewBinding.surfaceView.holder
             cameraDevice = suspendOpenCamera()
 
             // エンコーダーを初期化する
@@ -262,10 +258,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        cameraDevice?.close()
-        dashContainer.release()
-        videoEncoder.release()
-        audioEncoder.release()
+        release()
     }
 
     /** Surfaceが利用可能になるまで一時停止する */
@@ -304,6 +297,13 @@ class MainActivity : AppCompatActivity() {
         }, null)
     }
 
+    private fun release() {
+        dashContainer.release()
+        cameraDevice?.close()
+        videoEncoder.release()
+        audioEncoder.release()
+        lifecycleScope.cancel()
+    }
 
     companion object {
 

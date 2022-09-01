@@ -187,10 +187,8 @@ class DashContainerWriter(private val tempFile: File) {
             mediaMuxer?.stop()
             mediaMuxer?.release()
         }
-        inputStream?.close()
         isRunning = false
-        videoTrackIndex = INVALID_INDEX_NUMBER
-        audioTrackIndex = INVALID_INDEX_NUMBER
+        inputStream?.close()
     }
 
     companion object {
