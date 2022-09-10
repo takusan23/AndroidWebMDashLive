@@ -8,10 +8,11 @@ import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
-import android.view.SurfaceHolder
-import android.view.SurfaceView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AppCompatActivity
@@ -37,6 +38,12 @@ class MainActivity : AppCompatActivity() {
     /** 動画エンコーダー */
     private val videoEncoder = VideoEncoder()
 
+    /** 音声エンコーダー */
+    private val audioEncoder = AudioEncoder()
+
+    /** マイク */
+    private lateinit var audioRecord: AudioRecord
+
     /** 動画コンテナ管理クラス */
     private lateinit var dashContainer: DashContainerWriter
 
@@ -48,9 +55,9 @@ class MainActivity : AppCompatActivity() {
 
     /** 権限コールバック */
     @SuppressLint("MissingPermission")
-    private val permissionResult = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-        if (it) {
-            setupCameraAndEncoder()
+    private val permissionResult = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        if (it.all { it.value }) {
+            setupAll()
         }
     }
 
@@ -58,52 +65,84 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(viewBinding.root)
 
-        // カメラ権限がある場合は準備する
-        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            setupCameraAndEncoder()
+        // カメラとマイク権限がある場合は準備する
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        ) {
+            setupAll()
         } else {
             // 権限を求める
-            permissionResult.launch(android.Manifest.permission.CAMERA)
+            permissionResult.launch(arrayOf(android.Manifest.permission.CAMERA, android.Manifest.permission.RECORD_AUDIO))
+        }
+    }
+
+    @RequiresPermission(allOf = arrayOf(android.Manifest.permission.CAMERA, android.Manifest.permission.RECORD_AUDIO))
+    private fun setupAll() {
+        lifecycleScope.launch {
+            setupCommon()
+            setupCameraAndEncoder()
+            setupMicAndEncoder()
+        }
+    }
+
+    /** 共通部分の初期化 */
+    private suspend fun setupCommon() {
+        // 開始ボタン、セグメント生成とサーバーを起動する
+        viewBinding.startButton.setOnClickListener {
+            dashServer.startServer()
+            dashContainer.start()
+        }
+        // 終了ボタン
+        viewBinding.stopButton.setOnClickListener {
+            release()
+        }
+
+        // ファイル管理クラス
+        contentManager = DashContentManager(getExternalFilesDir(null)!!, SEGMENT_FILENAME_PREFIX).apply {
+            deleteCreateFile()
+        }
+        // コンテナフォーマットに書き込むクラス
+        dashContainer = DashContainerWriter(contentManager.createTempFile("temp")).apply {
+            createContainerFile()
+        }
+        // Webサーバー
+        dashServer = DashServer(
+            portNumber = 8080,
+            segmentIntervalSec = (SEGMENT_INTERVAL_MS / 1000).toInt(),
+            segmentFileNamePrefix = SEGMENT_FILENAME_PREFIX,
+            staticHostingFolder = contentManager.outputFolder
+        )
+        // WebM セグメントファイルを作る。MediaMuxerが書き込んでるファイルに対して切り出して保存する
+        lifecycleScope.launch(Dispatchers.Default) {
+            while (isActive) {
+                if (dashContainer.isRunning) {
+                    runCatching {
+                        // SEGMENT_INTERVAL_MS 待機したら新しいファイルにする
+                        delay(SEGMENT_INTERVAL_MS)
+                        // 初回時だけ初期化セグメントを作る
+                        if (!dashContainer.isGeneratedInitSegment) {
+                            contentManager.createFile(INIT_SEGMENT_FILENAME).also { initSegment ->
+                                dashContainer.sliceInitSegmentFile(initSegment.path)
+                            }
+                        }
+                        // MediaMuxerで書き込み中のファイルから定期的にデータをコピーして（セグメントファイルが出来る）クライアントで再生する
+                        // この方法だと、MediaMuxerとMediaMuxerからコピーしたデータで二重に容量を使うけど後で考える
+                        contentManager.createIncrementFile().also { segment ->
+                            dashContainer.sliceSegmentFile(segment.path)
+                        }
+                    }.onFailure { it.printStackTrace() }
+                }
+            }
         }
     }
 
     /** カメラとエンコーダーを初期化する */
     @RequiresPermission(android.Manifest.permission.CAMERA)
     private fun setupCameraAndEncoder() {
-
-        // 開始ボタン、セグメント生成とサーバーを起動する
-        viewBinding.startButton.setOnClickListener {
-            dashServer.startServer()
-            dashContainer.start()
-        }
-
-        // 終了ボタン
-        viewBinding.stopButton.setOnClickListener {
-            release()
-        }
-
         // コールバック関数を回避するためにコルーチンを活用していく
         lifecycleScope.launch {
             val holder = viewBinding.surfaceView.holder
             cameraDevice = suspendOpenCamera()
-
-            // ファイル管理クラス
-            contentManager = DashContentManager(getExternalFilesDir(null)!!, SEGMENT_FILENAME_PREFIX).apply {
-                // 今までのファイルを消す
-                deleteGenerateFile()
-            }
-            // コンテナフォーマットに書き込むクラス
-            dashContainer = DashContainerWriter(contentManager.generateTempFile("temp")).apply {
-                createContainerFile()
-            }
-
-            // Webサーバー
-            dashServer = DashServer(
-                portNumber = 8080,
-                segmentIntervalSec = (SEGMENT_INTERVAL_MS / 1000).toInt(),
-                segmentFileNamePrefix = SEGMENT_FILENAME_PREFIX,
-                staticHostingFolder = contentManager.outputFolder
-            )
 
             // エンコーダーを初期化する
             videoEncoder.prepareEncoder(
@@ -163,27 +202,54 @@ class MainActivity : AppCompatActivity() {
                     }
                 }, null)
             }
-            // WebM セグメントファイルを作る。MediaMuxerが書き込んでるファイルに対して切り出して保存する
-            launch(Dispatchers.Default) {
-                while (isActive) {
-                    if (dashContainer.isRunning) {
-                        runCatching {
-                            // SEGMENT_INTERVAL_MS 待機したら新しいファイルにする
-                            delay(SEGMENT_INTERVAL_MS)
-                            // 初回時だけ初期化セグメントを作る
-                            if (!dashContainer.isGeneratedInitSegment) {
-                                contentManager.createFile(INIT_SEGMENT_FILENAME).also { initSegment ->
-                                    dashContainer.sliceInitSegmentFile(initSegment.path)
-                                }
-                            }
-                            // MediaMuxerで書き込み中のファイルから定期的にデータをコピーして（セグメントファイルが出来る）クライアントで再生する
-                            // この方法だと、MediaMuxerとMediaMuxerからコピーしたデータで二重に容量を使うけど後で考える
-                            contentManager.createIncrementFile().also { segment ->
-                                dashContainer.sliceSegmentFile(segment.path)
-                            }
-                        }.onFailure { it.printStackTrace() }
+        }
+    }
+
+    /** カメラとエンコーダーを初期化する */
+    @RequiresPermission(android.Manifest.permission.RECORD_AUDIO)
+    private fun setupMicAndEncoder() {
+        // コールバック関数を回避するためにコルーチンを活用していく
+        lifecycleScope.launch {
+            // エンコーダーを初期化する
+            audioEncoder.prepareEncoder(
+                sampleRate = SAMPLE_RATE,
+                channelCount = 2,
+                bitRate = 192_000,
+                isOpus = true,
+            )
+
+            // 音声レコーダー起動
+            val bufferSizeInBytes = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT)
+            val audioFormat = AudioFormat.Builder().apply {
+                setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                setSampleRate(SAMPLE_RATE)
+                setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
+            }.build()
+            audioRecord = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                AudioRecord.Builder().apply {
+                    setAudioFormat(audioFormat)
+                    setAudioSource(MediaRecorder.AudioSource.MIC)
+                    setBufferSizeInBytes(bufferSizeInBytes)
+                }.build()
+            } else {
+                AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT, bufferSizeInBytes)
+            }.apply { startRecording() }
+
+            // エンコーダーを起動する、動作中は一時停止するので別コルーチンを起動
+            launch {
+                // エンコードする
+                audioEncoder.startAudioEncode(
+                    onRecordInput = { bytes ->
+                        // PCM音声を取り出しエンコする
+                        audioRecord.read(bytes, 0, bytes.size)
+                    },
+                    onOutputBufferAvailable = { byteBuffer, bufferInfo ->
+                        dashContainer.writeAudio(byteBuffer, bufferInfo)
+                    },
+                    onOutputFormatAvailable = { mediaFormat ->
+                        dashContainer.setAudioTrack(mediaFormat)
                     }
-                }
+                )
             }
         }
     }
@@ -213,10 +279,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun release() {
+        dashServer.stopServer()
         dashContainer.release()
         cameraDevice?.close()
         videoEncoder.release()
-        dashServer.stopServer()
+        audioEncoder.release()
         lifecycleScope.cancel()
     }
 
@@ -230,6 +297,9 @@ class MainActivity : AppCompatActivity() {
 
         /** セグメントファイルのプレフィックス */
         private const val SEGMENT_FILENAME_PREFIX = "segment"
+
+        /** サンプリングレート */
+        private const val SAMPLE_RATE = 48_000
     }
 
 }

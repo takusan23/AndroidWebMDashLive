@@ -48,8 +48,8 @@ class DashServer(
             get("manifest.mpd") {
                 call.respondText(manifest!!, ContentType.parse("text/html"))
             }
-            // 静的ファイル公開するように。
-            // マニフェスト、動画を配信する
+            // 静的フォルダ公開するように。
+            // 動画を配信する
             static {
                 staticRootFolder = staticHostingFolder
                 files(staticHostingFolder)
@@ -81,7 +81,7 @@ class DashServer(
                   <!-- duration が更新頻度っぽい -->
                   <SegmentTemplate duration="$segmentIntervalSec" initialization="/init.webm" media="/${segmentFileNamePrefix}${"$"}Number${'$'}.webm" startNumber="0"/>
                     <!-- 音声入れる場合は codecs="vp9,opus" -->
-                  <Representation id="default" codecs="vp9"/>
+                  <Representation id="default" codecs="vp9,opus"/>
                 </AdaptationSet>
               </Period>
             </MPD>
