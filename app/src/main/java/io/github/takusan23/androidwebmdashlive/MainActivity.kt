@@ -13,8 +13,6 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
-import android.view.SurfaceHolder
-import android.view.SurfaceView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AppCompatActivity
@@ -101,10 +99,10 @@ class MainActivity : AppCompatActivity() {
 
         // ファイル管理クラス
         contentManager = DashContentManager(getExternalFilesDir(null)!!, SEGMENT_FILENAME_PREFIX).apply {
-            deleteGenerateFile()
+            deleteCreateFile()
         }
         // コンテナフォーマットに書き込むクラス
-        dashContainer = DashContainerWriter(contentManager.generateTempFile("temp")).apply {
+        dashContainer = DashContainerWriter(contentManager.createTempFile("temp")).apply {
             createContainerFile()
         }
         // Webサーバー
@@ -281,6 +279,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun release() {
+        dashServer.stopServer()
         dashContainer.release()
         cameraDevice?.close()
         videoEncoder.release()

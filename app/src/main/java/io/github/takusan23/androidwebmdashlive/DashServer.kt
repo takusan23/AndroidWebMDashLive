@@ -48,8 +48,8 @@ class DashServer(
             get("manifest.mpd") {
                 call.respondText(manifest!!, ContentType.parse("text/html"))
             }
-            // 静的ファイル公開するように。
-            // マニフェスト、動画を配信する
+            // 静的フォルダ公開するように。
+            // 動画を配信する
             static {
                 staticRootFolder = staticHostingFolder
                 files(staticHostingFolder)

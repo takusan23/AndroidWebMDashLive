@@ -59,14 +59,14 @@ class DashContentManager(
      * @param fileName ファイル名
      * @return [File]
      */
-    suspend fun generateTempFile(fileName: String) = withContext(Dispatchers.IO) {
+    suspend fun createTempFile(fileName: String) = withContext(Dispatchers.IO) {
         File(tempFolder, fileName).apply {
             createNewFile()
         }
     }
 
     /** 生成したファイルを削除する */
-    suspend fun deleteGenerateFile() = withContext(Dispatchers.IO) {
+    suspend fun deleteCreateFile() = withContext(Dispatchers.IO) {
         tempFolder.listFiles()?.forEach { it.delete() }
         outputFolder.listFiles()?.forEach { it.delete() }
     }
