@@ -15,8 +15,6 @@ import java.nio.ByteBuffer
  *
  * VP9の場合は画面解像度が厳しい？
  * 1920x1080 1280x720 とかなら問題ないけど、ディスプレイの画面解像度を入れると例外を吐く？
- *
- * 入力Surface から H.264 / VP9 をエンコードする。
  */
 class VideoEncoder {
 
@@ -34,7 +32,6 @@ class VideoEncoder {
      * @param bitRate ビットレート
      * @param frameRate フレームレート
      * @param iFrameInterval Iフレーム
-     * @param isVp9 VP9コーデックを利用する場合はtrue
      */
     fun prepareEncoder(
         videoWidth: Int,
@@ -42,20 +39,18 @@ class VideoEncoder {
         bitRate: Int,
         frameRate: Int,
         iFrameInterval: Int = 1,
-        isVp9: Boolean = false,
     ) {
         // コーデックの選択
         // もし重くなるようなら、コーデックを VP8 にダウングレードしてもいいかもしれない
         // その場合、MPEG-DASHのマニフェストでもコーデックを vp8 にする必要あり
-        val codec = if (isVp9) MediaFormat.MIMETYPE_VIDEO_VP9 else MediaFormat.MIMETYPE_VIDEO_AVC
-        val videoEncodeFormat = MediaFormat.createVideoFormat(codec, videoWidth, videoHeight).apply {
+        val videoEncodeFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_VP8, videoWidth, videoHeight).apply {
             setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
             setInteger(MediaFormat.KEY_FRAME_RATE, frameRate)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, iFrameInterval)
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
         }
         // エンコーダー用意
-        mediaCodec = MediaCodec.createEncoderByType(codec).apply {
+        mediaCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_VP8).apply {
             configure(videoEncodeFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         }
     }

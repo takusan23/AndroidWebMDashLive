@@ -150,7 +150,6 @@ class MainActivity : AppCompatActivity() {
                 videoHeight = 720,
                 bitRate = 1_000_000,
                 frameRate = 30,
-                isVp9 = true
             )
             // Camera2 API から MediaCodec へ映像を渡すための Surface
             val inputSurface = videoEncoder.createInputSurface()

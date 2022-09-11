@@ -11,8 +11,6 @@ import java.nio.ByteBuffer
 /**
  * 音声エンコーダー
  * MediaCodecを使いやすくしただけ
- *
- * 内部音声が生のまま（PCM）送られてくるので、 AAC / Opus にエンコードする。
  */
 class AudioEncoder {
 
@@ -25,21 +23,18 @@ class AudioEncoder {
      * @param sampleRate サンプリングレート
      * @param channelCount チャンネル数
      * @param bitRate ビットレート
-     * @param isOpus コーデックにOpusを利用する場合はtrue。動画のコーデックにVP9を利用している場合は必須
      */
     fun prepareEncoder(
         sampleRate: Int = 48_000,
         channelCount: Int = 2,
         bitRate: Int = 192_000,
-        isOpus: Boolean = false,
     ) {
-        val codec = if (isOpus) MediaFormat.MIMETYPE_AUDIO_OPUS else MediaFormat.MIMETYPE_AUDIO_AAC
-        val audioEncodeFormat = MediaFormat.createAudioFormat(codec, sampleRate, channelCount).apply {
+        val audioEncodeFormat = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, sampleRate, channelCount).apply {
             setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
             setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
         }
         // エンコーダー用意
-        mediaCodec = MediaCodec.createEncoderByType(codec).apply {
+        mediaCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_OPUS).apply {
             configure(audioEncodeFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         }
     }
