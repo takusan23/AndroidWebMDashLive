@@ -43,14 +43,14 @@ class VideoEncoder {
         // コーデックの選択
         // もし重くなるようなら、コーデックを VP8 にダウングレードしてもいいかもしれない
         // その場合、MPEG-DASHのマニフェストでもコーデックを vp8 にする必要あり
-        val videoEncodeFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_VP8, videoWidth, videoHeight).apply {
+        val videoEncodeFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_VP9, videoWidth, videoHeight).apply {
             setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
             setInteger(MediaFormat.KEY_FRAME_RATE, frameRate)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, iFrameInterval)
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
         }
         // エンコーダー用意
-        mediaCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_VP8).apply {
+        mediaCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_VP9).apply {
             configure(videoEncodeFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         }
     }

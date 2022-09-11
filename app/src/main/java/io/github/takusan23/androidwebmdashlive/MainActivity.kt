@@ -288,7 +288,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
 
         /** 生成間隔 */
-        private const val SEGMENT_INTERVAL_MS = 3_000L
+        private const val SEGMENT_INTERVAL_MS = 1_000L
 
         /** 初期化セグメントの名前 */
         private const val INIT_SEGMENT_FILENAME = "init.webm"
