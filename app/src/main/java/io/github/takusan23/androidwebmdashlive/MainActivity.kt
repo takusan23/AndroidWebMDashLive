@@ -214,7 +214,6 @@ class MainActivity : AppCompatActivity() {
                 sampleRate = SAMPLE_RATE,
                 channelCount = 2,
                 bitRate = 192_000,
-                isOpus = true,
             )
 
             // 音声レコーダー起動
